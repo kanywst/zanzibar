@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zanzibar
+  labels:
+    app: zanzibar
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zanzibar
+  template:
+    metadata:
+      labels:
+        app: zanzibar
+    spec:
+      containers:
+      - name: zanzibar
+        image: zanzibar:latest
+        ports:
+        - containerPort: 8080
+        args: ["--port=8080", "--sample=true"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zanzibar
+spec:
+  type: NodePort
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30080
+  selector:
+    app: zanzibar
