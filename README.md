@@ -1,8 +1,42 @@
-# Zanzibar: Google's Consistent, Global Authorization System
+# Zanzibar
+
+- [Zanzibar](#zanzibar)
+  - [概要](#概要)
+  - [主な特徴](#主な特徴)
+  - [基本概念](#基本概念)
+    - [名前空間とオブジェクト](#名前空間とオブジェクト)
+    - [関係（リレーション）](#関係リレーション)
+    - [アクセス制御リスト（ACL）](#アクセス制御リストacl)
+    - [許可（パーミッション）](#許可パーミッション)
+    - [関係のツリー（Relation Tuples）](#関係のツリーrelation-tuples)
+    - [認可フロー](#認可フロー)
+  - [Kindを使った動作確認方法](#kindを使った動作確認方法)
+    - [前提条件](#前提条件)
+    - [1. Kindクラスターの作成](#1-kindクラスターの作成)
+    - [2. Zanzibarアプリケーションのビルドとロード](#2-zanzibarアプリケーションのビルドとロード)
+    - [3. Kubernetesマニフェストの作成](#3-kubernetesマニフェストの作成)
+    - [4. アプリケーションのデプロイ](#4-アプリケーションのデプロイ)
+    - [5. アプリケーションのテスト](#5-アプリケーションのテスト)
+    - [6. クリーンアップ](#6-クリーンアップ)
+  - [API エンドポイント](#api-エンドポイント)
+  - [仕様適合性](#仕様適合性)
+  - [参考資料](#参考資料)
 
 ## 概要
 
 Zanzibarは、Googleが開発した大規模分散アクセス制御システムです。2019年に論文として発表され、Google DriveやGoogle Photos、YouTube、Gmailなど、Googleの多くのサービスで使用されています。Zanzibarは数兆のアクセス制御関係を管理し、毎秒数百万のアクセス制御決定を処理する能力を持っています。
+
+```mermaid
+graph TD
+    A[クライアントアプリケーション] -->|アクセス制御リクエスト| B[Zanzibar]
+    B -->|許可/拒否| A
+    C[Google Drive] -->|利用| B
+    D[Google Photos] -->|利用| B
+    E[YouTube] -->|利用| B
+    F[Gmail] -->|利用| B
+    B -->|保存| G[(関係データベース)]
+    B -->|キャッシュ| H[キャッシュ層]
+```
 
 ## 主な特徴
 
@@ -27,6 +61,16 @@ Zanzibarでは、すべてのリソースは「名前空間」に属し、各リ
 
 - `document:report#owner@user:alice` - ユーザーAliceはドキュメントreportの所有者である
 - `document:report#viewer@user:bob` - ユーザーBobはドキュメントreportの閲覧者である
+
+```mermaid
+graph LR
+    A[document:report] -->|owner| B[user:alice]
+    A -->|viewer| C[user:bob]
+    A -->|viewer| D[group:engineering]
+    D -->|member| E[user:charlie]
+    F[group:frontend] -->|member| G[user:dave]
+    D -->|member| F
+```
 
 ### アクセス制御リスト（ACL）
 
@@ -57,7 +101,39 @@ Zanzibarでは、関係は「タプル」として表現されます：
 {document:report, viewer, group:engineering}
 ```
 
+### 認可フロー
+
+Zanzibarでの認可フローは以下のようになります：
+
+```mermaid
+sequenceDiagram
+    participant App as アプリケーション
+    participant Zanzibar as Zanzibar
+    participant Store as 関係ストア
+    
+    App->>Zanzibar: Check(user:bob, document:report, view)
+    Zanzibar->>Store: ユーザーの関係を取得
+    Store-->>Zanzibar: 関係リスト [viewer]
+    Zanzibar->>Zanzibar: パーミッション評価<br>view = owner | editor | viewer
+    Zanzibar-->>App: 許可 (ALLOW)
+```
+
 ## Kindを使った動作確認方法
+
+Kindを使用してKubernetes上でZanzibarをデプロイし、テストする方法を説明します。
+
+```mermaid
+graph TD
+    A[ホストマシン] -->|1. クラスター作成| B[Kind Cluster]
+    A -->|2. イメージビルド| C[Docker Image]
+    A -->|3. イメージロード| B
+    A -->|4. マニフェスト適用| B
+    B -->|5. デプロイ| D[Zanzibar Pod]
+    A -->|6. APIリクエスト| E[NodePort Service]
+    E -->|転送| D
+    D -->|応答| E
+    E -->|応答| A
+```
 
 ### 前提条件
 

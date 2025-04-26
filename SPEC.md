@@ -2,6 +2,7 @@
 
 - [Zanzibar sample application spec](#zanzibar-sample-application-spec)
   - [Zanzibar とは](#zanzibar-とは)
+  - [現在の実装アーキテクチャ](#現在の実装アーキテクチャ)
   - [主要な仕様](#主要な仕様)
     - [1. 名前空間とリレーション](#1-名前空間とリレーション)
     - [2. 関係タプル（Relation Tuples）](#2-関係タプルrelation-tuples)
@@ -10,12 +11,37 @@
     - [5. API 操作](#5-api-操作)
     - [6. 間接的なリレーション（グループメンバーシップなど）](#6-間接的なリレーショングループメンバーシップなど)
     - [7. スケーラビリティと分散処理](#7-スケーラビリティと分散処理)
+  - [理想的なアーキテクチャとの比較](#理想的なアーキテクチャとの比較)
   - [注意点](#注意点)
   - [結論](#結論)
 
 ## Zanzibar とは
 
 Zanzibar は Google が開発した大規模分散アクセス制御システムで、Google Drive、Google Photos、YouTube などの Google サービスで使用されています。このシステムは数兆のアクセス制御関係を管理し、毎秒数百万のアクセス制御決定を処理する能力を持っています。
+
+## 現在の実装アーキテクチャ
+
+現在のサンプル実装のアーキテクチャは以下のようになっています：
+
+```mermaid
+graph TD
+    A[クライアント] -->|HTTP リクエスト| B[API サーバー]
+    B -->|関係の取得/更新| C[ポリシーストア]
+    B -->|スキーマ検証| D[スキーマ]
+    C -->|関係の評価| D
+    
+    subgraph "src/api/server.go"
+    B
+    end
+    
+    subgraph "src/policy/store.go"
+    C
+    end
+    
+    subgraph "src/schema/schema.go"
+    D
+    end
+```
 
 ## 主要な仕様
 
@@ -61,6 +87,23 @@ Zanzibar の主要な仕様と、現在の実装の適合性を以下に分析�
 - `ZookieToken` フィールドと `changeNumber` を使用して基本的な一貫性メカニズムを実装しています。
 - しかし、分散環境での完全な一貫性保証（スナップショット分離など）は実装されていません。
 
+```mermaid
+sequenceDiagram
+    participant C1 as クライアント1
+    participant C2 as クライアント2
+    participant Z as Zanzibar
+    participant S as ストア
+    
+    C1->>Z: 関係追加リクエスト
+    Z->>S: 関係を保存
+    Z-->>C1: zookie_token_1を返却
+    
+    C2->>Z: 関係取得リクエスト<br>(zookie_token_1で一貫性を指定)
+    Z->>S: zookie_token_1以降の<br>変更を含む関係を取得
+    S-->>Z: 最新の関係データ
+    Z-->>C2: 一貫性のある結果を返却
+```
+
 **適合性**: ⚠️ 基本的な機能は実装されていますが、分散環境での完全な一貫性保証は不足しています。
 
 ### 5. API 操作
@@ -69,6 +112,21 @@ Zanzibar の主要な仕様と、現在の実装の適合性を以下に分析�
 - Check: サブジェクトがリソースに対して特定の許可を持っているかを確認
 - Expand: 特定のリソースとリレーションに対して、アクセス権を持つすべてのサブジェクトを取得
 - Write: リレーションタプルの追加・削除
+
+```mermaid
+graph TD
+    subgraph "API操作"
+    A[Check] -->|"Check(user:bob, document:report, view)"| B{許可?}
+    B -->|"Yes"| C[ALLOW]
+    B -->|"No"| D[DENY]
+    
+    E[Expand] -->|"Expand(document:report, viewer)"| F[サブジェクトリスト]
+    F --> G["[user:bob, group:engineering]"]
+    
+    H[Write] -->|"AddRelationship(document:report, viewer, user:dave)"| I[新しい関係]
+    J[Write] -->|"RemoveRelationship(document:report, viewer, user:dave)"| K[関係削除]
+    end
+```
 
 **現状**:
 - `Check` メソッドでアクセス権の確認を実装
@@ -83,9 +141,25 @@ Zanzibar の主要な仕様と、現在の実装の適合性を以下に分析�
 
 **現状**:
 - `getRelations` メソッドでグループメンバーシップを通じた間接的なリレーションをサポートしています。
-- しかし、より複雑な間接リレーション（ネストされたグループなど）のサポートは限定的です。
+- 実装を改善し、ネストされたグループをサポートするようになりました。
 
-**適合性**: ⚠️ 基本的なグループメンバーシップはサポートされていますが、より複雑な間接リレーションのサポートは限定的です。
+```mermaid
+graph TD
+    A[user:dave] -->|member of| B[group:frontend]
+    B -->|member of| C[group:engineering]
+    C -->|viewer of| D[document:report]
+    E[user:charlie] -->|member of| C
+    
+    subgraph "ネストされたグループの例"
+    A
+    B
+    C
+    D
+    E
+    end
+```
+
+**適合性**: ✅ ネストされたグループのサポートを追加したため、仕様に適合しています。
 
 ### 7. スケーラビリティと分散処理
 
@@ -95,7 +169,49 @@ Zanzibar の主要な仕様と、現在の実装の適合性を以下に分析�
 - 現在の実装はインメモリストアを使用しており、分散環境での動作やスケーラビリティに制限があります。
 - 本格的な分散データストア（Spanner など）の統合は実装されていません。
 
+```mermaid
+graph TD
+    A[クライアント] -->|リクエスト| B[単一サーバー]
+    B -->|保存/取得| C[インメモリストア]
+    
+    subgraph "現在の実装"
+    B
+    C
+    end
+```
+
 **適合性**: ❌ 分散環境でのスケーラビリティに関する仕様は満たしていません。
+
+## 理想的なアーキテクチャとの比較
+
+Googleの論文で説明されている理想的なZanzibarアーキテクチャと現在の実装を比較します。
+
+```mermaid
+graph TD
+    subgraph "理想的なZanzibarアーキテクチャ"
+    A1[クライアント] -->|リクエスト| B1[フロントエンドサーバー]
+    B1 -->|分散処理| C1[バックエンドサーバー1]
+    B1 -->|分散処理| D1[バックエンドサーバー2]
+    B1 -->|分散処理| E1[バックエンドサーバーN]
+    C1 -->|読み書き| F1[(Spanner)]
+    D1 -->|読み書き| F1
+    E1 -->|読み書き| F1
+    B1 -->|キャッシュ| G1[分散キャッシュ]
+    end
+    
+    subgraph "現在の実装"
+    A2[クライアント] -->|リクエスト| B2[単一サーバー]
+    B2 -->|保存/取得| C2[インメモリストア]
+    end
+```
+
+主な違いは以下の通りです：
+
+1. **分散アーキテクチャ**: 理想的なZanzibarは完全に分散化されていますが、現在の実装は単一サーバーです。
+2. **永続ストレージ**: 理想的なZanzibarはSpannerなどの分散データベースを使用しますが、現在の実装はインメモリストアを使用しています。
+3. **キャッシング**: 理想的なZanzibarは分散キャッシュを使用しますが、現在の実装にはキャッシュ層がありません。
+4. **スケーラビリティ**: 理想的なZanzibarは水平スケーリングが可能ですが、現在の実装はスケーリングが制限されています。
+5. **一貫性保証**: 理想的なZanzibarはスナップショット分離などの高度な一貫性メカニズムを提供しますが、現在の実装は基本的な一貫性メカニズムのみを提供しています。
 
 ## 注意点
 
