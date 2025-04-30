@@ -22,6 +22,12 @@ func main() {
 	log.Println("Initializing schema...")
 	schemaStore := schema.LoadDefaultSchema()
 
+	// Update schema with userset rewrite rules
+	log.Println("Updating schema with userset rewrite rules...")
+	if err := schemaStore.UpdateDefinitionWithUsersetRewrites(); err != nil {
+		log.Fatalf("Failed to update schema with userset rewrite rules: %v", err)
+	}
+
 	// Initialize policy store
 	log.Println("Initializing policy store...")
 	policyStore := policy.NewStore(schemaStore)

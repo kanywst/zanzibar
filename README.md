@@ -20,6 +20,10 @@
     - [6. クリーンアップ](#6-クリーンアップ)
   - [API エンドポイント](#api-エンドポイント)
   - [仕様適合性](#仕様適合性)
+  - [ドキュメント](#ドキュメント)
+  - [Userset Rewrite Rules](#userset-rewrite-rules)
+    - [テスト実行方法](#テスト実行方法)
+  - [ディレクトリ構造](#ディレクトリ構造)
   - [参考資料](#参考資料)
 
 ## 概要
@@ -279,6 +283,73 @@ Zanzibar APIは以下のエンドポイントを提供します：
 ## 仕様適合性
 
 このプロジェクトのZanzibar仕様への適合性の詳細については、[SPEC.md](SPEC.md)を参照してください。
+
+## ドキュメント
+
+このプロジェクトには、以下のドキュメントが含まれています：
+
+- [包括的解説](docs/comprehensive.md) - Google Zanzibar論文に基づいた包括的な解説
+- [技術仕様書](docs/technical-spec.md) - Zanzibarの技術的な実装詳細
+- [仕様強化計画](docs/enhancements.md) - 現在の実装に足りていない部分と強化計画
+- [Userset Rewrite Rules](docs/userset-rewrite.md) - Userset Rewrite Rulesの実装と使用方法
+
+## Userset Rewrite Rules
+
+Google Zanzibar論文で説明されているUserset Rewrite Rulesの実装を追加しました。これにより、より柔軟で強力なアクセス制御ポリシーを表現できるようになりました。詳細については、[docs/userset-rewrite.md](docs/userset-rewrite.md)を参照してください。
+
+```mermaid
+graph TD
+    A[オブジェクト#リレーション] -->|評価| B{Userset Rewrite Rule}
+    B -->|this| C[直接関係]
+    B -->|computed_userset| D[同じオブジェクトの<br>別のリレーション]
+    B -->|tuple_to_userset| E[別のオブジェクトの<br>リレーション]
+    
+    F[論理演算子] --> G[Union]
+    F --> H[Intersection]
+    F --> I[Exclusion]
+    
+    B --> F
+```
+
+### テスト実行方法
+
+Userset Rewrite Rulesの機能をテストするには、以下のコマンドを実行します：
+
+```bash
+./tests/test-userset-rewrite.sh
+```
+
+## ディレクトリ構造
+
+```
+zanzibar/
+├── docs/                      # ドキュメント
+│   ├── comprehensive.md       # 包括的解説
+│   ├── technical-spec.md      # 技術仕様書
+│   ├── enhancements.md        # 仕様強化計画
+│   └── userset-rewrite.md     # Userset Rewrite Rules解説
+├── src/                       # ソースコード
+│   ├── main.go                # メインエントリーポイント
+│   ├── api/                   # API実装
+│   │   └── server.go          # サーバー実装
+│   ├── policy/                # ポリシー評価
+│   │   ├── store.go           # ポリシーストア
+│   │   └── evaluator.go       # 評価エンジン
+│   └── schema/                # スキーマ定義
+│       ├── schema.go          # スキーマ実装
+│       └── userset_rewrite.go # Userset Rewrite Rules実装
+├── tests/                     # テスト
+│   ├── test-userset-rewrite.sh # テスト実行スクリプト
+│   └── userset_rewrite/       # Userset Rewrite Rulesテスト
+│       └── userset_rewrite_test.go # テスト実装
+├── client-example.sh          # クライアント例
+├── Dockerfile                 # Dockerファイル
+├── kind-config.yaml           # Kindクラスター設定
+├── kubernetes-manifests.yaml  # Kubernetesマニフェスト
+├── README.md                  # このファイル
+├── SPEC.md                    # 仕様適合性
+└── test-kind-deployment.sh    # Kindデプロイメントテスト
+```
 
 ## 参考資料
 

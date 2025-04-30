@@ -23,6 +23,7 @@ type Relationship struct {
 type Store struct {
 	relationships []Relationship
 	schema        *schema.Schema
+	evaluator     *Evaluator
 	mu            sync.RWMutex
 	// For consistency tracking
 	changeNumber int64
@@ -30,11 +31,13 @@ type Store struct {
 
 // NewStore creates a new policy store
 func NewStore(schema *schema.Schema) *Store {
-	return &Store{
+	store := &Store{
 		relationships: make([]Relationship, 0),
 		schema:        schema,
 		changeNumber:  1,
 	}
+	store.evaluator = NewEvaluator(store)
+	return store
 }
 
 // AddRelationship adds a new relationship
@@ -113,23 +116,41 @@ func (s *Store) Check(subject, resource, action string) (bool, string, error) {
 	}
 	resourceType := resourceParts[0]
 
-	// Get all relations the subject has with the resource
-	relations := s.getRelations(subject, resource)
-
-	// Evaluate permission based on schema
-	allowed, err := s.schema.EvaluatePermission(resourceType, action, relations)
+	// Get the definition for the resource type
+	def, err := s.schema.GetDefinition(resourceType)
 	if err != nil {
 		return false, "", err
 	}
 
-	var reason string
-	if allowed {
-		reason = fmt.Sprintf("Subject has required relation(s): %v", relations)
-	} else {
-		reason = fmt.Sprintf("Subject lacks required relation(s) for action: %s", action)
+	// Get the permission definition
+	perm, exists := def.Permissions[action]
+	if !exists {
+		return false, "", fmt.Errorf("permission %s not defined for resource type %s", action, resourceType)
 	}
 
-	return allowed, reason, nil
+	// Parse the permission expression
+	// Format: "relation1 | relation2 | relation3"
+	expr := perm.Expression
+	parts := strings.Split(expr, "|")
+
+	// Check each relation in the permission expression
+	for _, part := range parts {
+		relation := strings.TrimSpace(part)
+
+		// Evaluate the relation using the userset rewrite rules
+		allowed, err := s.evaluator.EvaluateUserset(resource, relation, subject)
+		if err != nil {
+			return false, "", err
+		}
+
+		if allowed {
+			reason := fmt.Sprintf("Subject has required relation: %s", relation)
+			return true, reason, nil
+		}
+	}
+
+	reason := fmt.Sprintf("Subject lacks required relation(s) for action: %s", action)
+	return false, reason, nil
 }
 
 // getRelations returns all relations a subject has with a resource
@@ -312,5 +333,23 @@ func (s *Store) InitializeWithSampleData() {
 		UpdatedAt:   time.Now(),
 	})
 
-	s.changeNumber = 7
+	// Parent-child relationship for document inheritance
+	s.relationships = append(s.relationships, Relationship{
+		Resource:    "document:report",
+		Relation:    "parent",
+		Subject:     "folder:projects",
+		ZookieToken: "zk_7",
+		UpdatedAt:   time.Now(),
+	})
+
+	// Viewer relationship for the parent folder
+	s.relationships = append(s.relationships, Relationship{
+		Resource:    "folder:projects",
+		Relation:    "viewer",
+		Subject:     "user:eve",
+		ZookieToken: "zk_8",
+		UpdatedAt:   time.Now(),
+	})
+
+	s.changeNumber = 9
 }

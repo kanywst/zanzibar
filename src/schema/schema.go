@@ -16,7 +16,8 @@ type Definition struct {
 
 // Relation defines a relationship between resources
 type Relation struct {
-	Subjects []Subject `json:"subjects"`
+	Subjects       []Subject       `json:"subjects"`
+	UsersetRewrite *UsersetRewrite `json:"userset_rewrite,omitempty"`
 }
 
 // Subject defines a subject that can be in a relation
@@ -100,6 +101,11 @@ func LoadDefaultSchema() *Schema {
 					{Type: "group", Relation: "member"},
 				},
 			},
+			"parent": {
+				Subjects: []Subject{
+					{Type: "folder"},
+				},
+			},
 		},
 		Permissions: map[string]Permission{
 			"view": {
@@ -114,6 +120,41 @@ func LoadDefaultSchema() *Schema {
 		},
 	}
 	schema.AddDefinition(docDef)
+
+	// Folder definition
+	folderDef := &Definition{
+		Type: "folder",
+		Relations: map[string]Relation{
+			"owner": {
+				Subjects: []Subject{
+					{Type: "user"},
+				},
+			},
+			"editor": {
+				Subjects: []Subject{
+					{Type: "user"},
+				},
+			},
+			"viewer": {
+				Subjects: []Subject{
+					{Type: "user"},
+					{Type: "group", Relation: "member"},
+				},
+			},
+		},
+		Permissions: map[string]Permission{
+			"view": {
+				Expression: "owner | editor | viewer",
+			},
+			"edit": {
+				Expression: "owner | editor",
+			},
+			"delete": {
+				Expression: "owner",
+			},
+		},
+	}
+	schema.AddDefinition(folderDef)
 
 	// Group definition
 	groupDef := &Definition{
